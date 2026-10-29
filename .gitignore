@@ -1,0 +1,22 @@
+# Executable / Build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/build/
+/dist/
+
+
+# Configuration files (local / sensitive)
+config.json
+
+# IDE - VS Code
+.vscode/
+
+# Temporary files
+tmp/
+temp/
