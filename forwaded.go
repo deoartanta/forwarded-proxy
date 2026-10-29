@@ -54,6 +54,14 @@ func logRed(str string) string {
 func main() {
 	var wg sync.WaitGroup
 	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := connectSocks("stg")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	}()
+	wg.Wait()
 }
 
 func connectSocks(key string) error {
