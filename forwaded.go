@@ -68,6 +68,13 @@ func main() {
 	})
 
 	wg.Go(func() {
+		err := connectSocks("stg-redis")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
 		err := connectSocks("stg")
 		if err != nil {
 			log.Println(logRed(err.Error()))
