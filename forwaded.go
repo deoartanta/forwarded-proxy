@@ -147,7 +147,7 @@ func connectSocksSSH(key string) error {
 		Auth:            []ssh.AuthMethod{ssh.Password(sshPass)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-	log.Printf("["+key+"]Trying SOCKS %s -> SSH %s\n", proxyAddr, sshServer)
+	log.Printf("["+key+"] Trying SOCKS %s -> SSH %s\n", proxyAddr, sshServer)
 
 	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
 	if err != nil {
@@ -170,7 +170,7 @@ func connectSocksSSH(key string) error {
 	if err != nil {
 		return fmt.Errorf("%v", err)
 	}
-	log.Println("["+logGreen(key)+"] Listening", logGreen(local), "->", logGreen(remote), "via ssh", logGreen(sshServer))
+	log.Println("["+logGreen(key)+"] Listening", logGreen(local), "->", logGreen(remote), "via", logGreen(proxyAddr), "->", "ssh", logGreen(sshServer))
 	mapIp := map[string]bool{}
 
 	for {
