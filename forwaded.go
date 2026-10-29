@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
@@ -51,7 +52,8 @@ func logRed(str string) string {
 }
 
 func main() {
-
+	var wg sync.WaitGroup
+	wg.Add(1)
 }
 
 func connectSocks(key string) error {
