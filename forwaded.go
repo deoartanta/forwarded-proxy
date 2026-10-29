@@ -53,14 +53,19 @@ func logRed(str string) string {
 
 func main() {
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
+		err := connectSocksSSH("sbox-cda")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
 		err := connectSocks("stg")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
-	}()
+	})
 	wg.Wait()
 }
 
