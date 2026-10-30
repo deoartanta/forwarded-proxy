@@ -12,7 +12,8 @@
             "ssh-password":"pwd",
             "port":5432,
             "port-local":9101,
-            "via-socks":"in-active"
+            "via-socks":"in-active",
+            "status":"in-active"
         },
         "stg-redis":{
             "ip":"111.111.1.1",
@@ -22,7 +23,8 @@
             "ssh-password":"pwd",
             "port":5432,
             "port-local":9101,
-            "via-socks":"in-active"
+            "via-socks":"in-active",
+            "status":"in-active"
         },
         "sbox-sdn":{
             "ip":"111.111.1.1",
@@ -32,7 +34,8 @@
             "ssh-password":"pwd",
             "port":5432,
             "port-local":9101,
-            "via-socks":"in-active"
+            "via-socks":"in-active",
+            "status":"in-active"
         },
         "sbox-cda":{
             "ip":"111.111.1.1",
@@ -42,7 +45,8 @@
             "ssh-password":"pwd",
             "port":5432,
             "port-local":9101,
-            "via-socks":"in-active"
+            "via-socks":"in-active",
+            "status":"in-active"
         },
         "prod-sdn-redis":{
             "ip":"111.111.1.1",
@@ -52,7 +56,8 @@
             "ssh-password":"pwd",
             "port":5432,
             "port-local":9101,
-            "via-socks":"in-active"
+            "via-socks":"in-active",
+            "status":"in-active"
         }
     }
 }
