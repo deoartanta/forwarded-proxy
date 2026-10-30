@@ -61,6 +61,13 @@ func main() {
 	})
 
 	wg.Go(func() {
+		err := connectSSH("sbox-sdn")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
 		err := connectSocksSSH("sbox-cda")
 		if err != nil {
 			log.Println(logRed(err.Error()))
@@ -87,11 +94,21 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+
+	wg.Go(func() {
+		err := connectSSH("stg")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
 	wg.Wait()
 }
 
 func connectSocks(key string) error {
-
+	viaSocks := GetConfig("remote." + key + ".via-socks")
+	if viaSocks != "active" || viaSocks == "" {
+		return fmt.Errorf("[socks-%s] via socks %s", key, viaSocks)
+	}
 	remoteIp := GetConfig("remote." + key + ".ip")
 	remotePort := GetConfig("remote." + key + ".port")
 	remotePortLocal := GetConfig("remote." + key + ".port-local")
@@ -103,23 +120,23 @@ func connectSocks(key string) error {
 	socksPort := GetConfig("socks.port")
 
 	socks := socksIp + ":" + socksPort
-	log.Printf("["+key+"] Trying SOCKS %s -> %s via %s\n", local, remote, socks)
+	log.Printf("[socks-"+key+"] Trying SOCKS %s -> %s via %s\n", local, remote, socks)
 
 	ln, err := net.Listen("tcp", local)
 	if err != nil {
-		return fmt.Errorf("["+key+"] %v", err)
+		return fmt.Errorf("[socks-"+key+"] %v", err)
 	}
-	log.Println("["+logGreen(key)+"] Listening", logGreen(local), "->", logGreen(remote), "via", logGreen(socks))
+	log.Println("["+logGreen("socks-"+key)+"] Listening", logGreen(local), "->", logGreen(remote), "via", logGreen(socks))
 	mapIp := map[string]bool{}
 	for {
 		client, err := ln.Accept()
 		if err != nil {
-			return fmt.Errorf("["+key+"] %v", err)
+			return fmt.Errorf("[socks-"+key+"] %v", err)
 		}
 		go func(cl net.Conn) {
 			srv, err := socks5Dial(socks, remote)
 			if err != nil {
-				log.Println("["+logGreen(key)+"]", logRed(err.Error()))
+				log.Println("["+logGreen("socks-"+key)+"]", logRed(err.Error()))
 				cl.Close()
 				return
 			}
@@ -129,7 +146,7 @@ func connectSocks(key string) error {
 				ip = ipSplit[0]
 			}
 			if !mapIp[ip] {
-				log.Println("["+logGreen(key)+"] new client address=>", logGreen(ip))
+				log.Println("["+logGreen("socks-"+key)+"] new client address=>", logGreen(ip))
 				mapIp[ip] = true
 			}
 			go io.Copy(srv, cl)
@@ -141,6 +158,10 @@ func connectSocks(key string) error {
 }
 
 func connectSocksSSH(key string) error {
+	viaSocks := GetConfig("remote." + key + ".via-socks")
+	if viaSocks != "active" || viaSocks == "" {
+		return fmt.Errorf("[socks-%s] via socks %s", key, viaSocks)
+	}
 	sshIpServer := GetConfig("remote." + key + ".ssh-ip")
 	sshPortServer := GetConfig("remote." + key + ".ssh-port")
 	sshUserServer := GetConfig("remote." + key + ".ssh-user")
@@ -168,21 +189,21 @@ func connectSocksSSH(key string) error {
 		Auth:            []ssh.AuthMethod{ssh.Password(sshPass)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-	log.Printf("["+key+"] Trying SOCKS %s -> SSH %s\n", proxyAddr, sshServer)
+	log.Printf("[socks-"+key+"] Trying SOCKS %s -> SSH %s\n", proxyAddr, sshServer)
 
 	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
 	if err != nil {
-		return fmt.Errorf("["+key+"] SOCKS dialer failed: %v", err)
+		return fmt.Errorf("[socks-"+key+"] SOCKS dialer failed: %v", err)
 	}
 
 	conn, err := dialer.Dial("tcp", sshServer)
 	if err != nil {
-		return fmt.Errorf("["+key+"] SOCKS connect failed: %v", err)
+		return fmt.Errorf("[socks-"+key+"] SOCKS connect failed: %v", err)
 	}
 
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, sshServer, sshConfig)
 	if err != nil {
-		return fmt.Errorf("["+key+"] SSH handshake failed: %v", err)
+		return fmt.Errorf("[socks-"+key+"] SSH handshake failed: %v", err)
 	}
 	client := ssh.NewClient(sshConn, chans, reqs)
 	// log.Println("["+key+"]SSH connected!", key)
@@ -191,17 +212,17 @@ func connectSocksSSH(key string) error {
 	if err != nil {
 		return fmt.Errorf("%v", err)
 	}
-	log.Println("["+logGreen(key)+"] Listening", logGreen(local), "->", logGreen(remote), "via", logGreen(proxyAddr), "->", "ssh", logGreen(sshServer))
+	log.Println("["+logGreen("socks-"+key)+"] Listening", logGreen(local), "->", logGreen(remote), "via", logGreen(proxyAddr), "->", "ssh", logGreen(sshServer))
 	mapIp := map[string]bool{}
 
 	for {
 		local, err := ln.Accept()
 		if err != nil {
-			return fmt.Errorf("["+logGreen(key)+"] %v", logRed(err.Error()))
+			return fmt.Errorf("["+logGreen("socks-"+key)+"] %v", logRed(err.Error()))
 		}
 		remoteDB, err := client.Dial("tcp", remote)
 		if err != nil {
-			log.Printf("["+logGreen(key)+"] %v\n", logRed(err.Error()))
+			log.Printf("["+logGreen("socks-"+key)+"] %v\n", logRed(err.Error()))
 			local.Close()
 			continue
 		}
@@ -211,7 +232,82 @@ func connectSocksSSH(key string) error {
 			ip = ipSplit[0]
 		}
 		if !mapIp[ip] {
-			log.Println("["+logGreen(key)+"] new client address with ssh=>", logGreen(ip))
+			log.Println("["+logGreen("socks-"+key)+"] new client address with ssh=>", logGreen(ip))
+			mapIp[ip] = true
+		}
+		go func() {
+			go io.Copy(remoteDB, local)
+			io.Copy(local, remoteDB)
+			local.Close()
+			remoteDB.Close()
+		}()
+	}
+}
+
+func connectSSH(key string) error {
+	viaSocks := GetConfig("remote." + key + ".via-socks")
+	if viaSocks == "active" || viaSocks == "" {
+		return fmt.Errorf("[ssh-%s] via socks %s", key, viaSocks)
+	}
+	sshIpServer := GetConfig("remote." + key + ".ssh-ip")
+	sshPortServer := GetConfig("remote." + key + ".ssh-port")
+	sshUserServer := GetConfig("remote." + key + ".ssh-user")
+	sshPassServer := GetConfig("remote." + key + ".ssh-password")
+
+	remoteIp := GetConfig("remote." + key + ".ip")
+	remotePort := GetConfig("remote." + key + ".port")
+	remotePortLocal := GetConfig("remote." + key + ".port-local")
+
+	sshServer := sshIpServer + ":" + sshPortServer
+	sshUser := sshUserServer
+	sshPass := sshPassServer
+
+	local := "127.0.0.1:" + remotePortLocal
+	remote := remoteIp + ":" + remotePort
+
+	sshConfig := &ssh.ClientConfig{
+		User:            sshUser,
+		Auth:            []ssh.AuthMethod{ssh.Password(sshPass)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	log.Printf("[ssh-%s] Direct connect to SSH %s...", key, sshServer)
+	conn, err := net.Dial("tcp", sshServer)
+	if err != nil {
+		return fmt.Errorf("[ssh-"+key+"] SSH dialer failed: %v", err)
+	}
+
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, sshServer, sshConfig)
+	if err != nil {
+		return fmt.Errorf("[ssh-"+key+"] SSH handshake failed: %v", err)
+	}
+	client := ssh.NewClient(sshConn, chans, reqs)
+
+	listener, err := net.Listen("tcp", local)
+	if err != nil {
+		return fmt.Errorf("[ssh-"+key+"] listen failed: %v", err)
+	}
+	log.Println("["+logGreen("ssh-"+key)+"] Listening", logGreen(local), "->", logGreen(remote), "via ssh", logGreen(sshServer))
+	mapIp := map[string]bool{}
+
+	for {
+		local, err := listener.Accept()
+		if err != nil {
+			return fmt.Errorf("[ssh-"+logGreen(key)+"] %v", logRed(err.Error()))
+		}
+		remoteDB, err := client.Dial("tcp", remote)
+		if err != nil {
+			log.Printf("["+logGreen("ssh-"+key)+"] %v\n", logRed(err.Error()))
+			local.Close()
+			continue
+		}
+		ip := ""
+		ipSplit := strings.Split(remoteDB.LocalAddr().String(), ":")
+		if len(ipSplit) > 0 {
+			ip = ipSplit[0]
+		}
+		if !mapIp[ip] {
+			log.Println("["+logGreen("ssh-"+key)+"] new client address with ssh=>", logGreen(ip))
 			mapIp[ip] = true
 		}
 		go func() {
