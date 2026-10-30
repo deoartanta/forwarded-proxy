@@ -61,13 +61,6 @@ func main() {
 	})
 
 	wg.Go(func() {
-		err := connectSSH("sbox-sdn")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
-
-	wg.Go(func() {
 		err := connectSocksSSH("sbox-cda")
 		if err != nil {
 			log.Println(logRed(err.Error()))
@@ -75,21 +68,7 @@ func main() {
 	})
 
 	wg.Go(func() {
-		err := connectSSH("sbox-cda")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
-
-	wg.Go(func() {
 		err := connectSocks("stg-redis")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
-
-	wg.Go(func() {
-		err := connectSSH("stg-redis")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
@@ -115,6 +94,26 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Go(func() {
+		err := connectSSH("sbox-sdn")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
+		err := connectSSH("sbox-cda")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
+		err := connectSSH("stg-redis")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
 
 	wg.Go(func() {
 		err := connectSSH("stg")
@@ -127,6 +126,10 @@ func main() {
 
 func connectSocks(key string) error {
 	viaSocks := GetConfig("remote." + key + ".via-socks")
+	status := GetConfig("remote." + key + ".status")
+	if status == "in-active" || status == "" {
+		return fmt.Errorf("[socks-%s] status %s", key, status)
+	}
 	if viaSocks != "active" || viaSocks == "" {
 		return fmt.Errorf("[socks-%s] via socks %s", key, viaSocks)
 	}
@@ -180,6 +183,10 @@ func connectSocks(key string) error {
 
 func connectSocksSSH(key string) error {
 	viaSocks := GetConfig("remote." + key + ".via-socks")
+	status := GetConfig("remote." + key + ".status")
+	if status == "in-active" || status == "" {
+		return fmt.Errorf("[socks-%s] status %s", key, status)
+	}
 	if viaSocks != "active" || viaSocks == "" {
 		return fmt.Errorf("[socks-%s] via socks %s", key, viaSocks)
 	}
@@ -267,6 +274,10 @@ func connectSocksSSH(key string) error {
 
 func connectSSH(key string) error {
 	viaSocks := GetConfig("remote." + key + ".via-socks")
+	status := GetConfig("remote." + key + ".status")
+	if status == "in-active" || status == "" {
+		return fmt.Errorf("[ssh-%s] status %s", key, status)
+	}
 	if viaSocks == "active" || viaSocks == "" {
 		return fmt.Errorf("[ssh-%s] via socks %s", key, viaSocks)
 	}
