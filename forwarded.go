@@ -75,6 +75,13 @@ func main() {
 	})
 
 	wg.Go(func() {
+		err := connectSSH("sbox-cda")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
 		err := connectSocks("stg-redis")
 		if err != nil {
 			log.Println(logRed(err.Error()))
@@ -82,7 +89,21 @@ func main() {
 	})
 
 	wg.Go(func() {
+		err := connectSSH("stg-redis")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
 		err := connectSocksSSH("prod-sdn-redis")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+
+	wg.Go(func() {
+		err := connectSSH("prod-sdn-redis")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
