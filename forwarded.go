@@ -60,7 +60,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocksSSH("sbox-cda")
@@ -68,7 +67,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocks("stg-redis")
@@ -76,7 +74,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocksSSH("prod-sdn-redis")
@@ -84,7 +81,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocks("stg")
@@ -92,7 +88,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := startTunnel("prod-sdn-redis")
@@ -100,7 +95,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := startTunnel("sbox-sdn")
@@ -108,7 +102,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := startTunnel("sbox-cda")
@@ -116,7 +109,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := startTunnel("stg-redis")
@@ -124,7 +116,6 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-	wg.Wait()
 
 	wg.Go(func() {
 		err := startTunnel("stg")
