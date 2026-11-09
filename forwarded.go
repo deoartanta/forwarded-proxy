@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
@@ -59,6 +60,7 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocksSSH("sbox-cda")
@@ -66,6 +68,7 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocks("stg-redis")
@@ -73,6 +76,7 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocksSSH("prod-sdn-redis")
@@ -80,13 +84,7 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
-
-	wg.Go(func() {
-		err := connectSSH("prod-sdn-redis")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
+	wg.Wait()
 
 	wg.Go(func() {
 		err := connectSocks("stg")
@@ -94,29 +92,42 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Wait()
+
 	wg.Go(func() {
-		err := connectSSH("sbox-sdn")
+		err := startTunnel("prod-sdn-redis")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Wait()
 
 	wg.Go(func() {
-		err := connectSSH("sbox-cda")
+		err := startTunnel("sbox-sdn")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Wait()
 
 	wg.Go(func() {
-		err := connectSSH("stg-redis")
+		err := startTunnel("sbox-cda")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	wg.Wait()
 
 	wg.Go(func() {
-		err := connectSSH("stg")
+		err := startTunnel("stg-redis")
+		if err != nil {
+			log.Println(logRed(err.Error()))
+		}
+	})
+	wg.Wait()
+
+	wg.Go(func() {
+		err := startTunnel("stg")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
@@ -269,6 +280,150 @@ func connectSocksSSH(key string) error {
 			local.Close()
 			remoteDB.Close()
 		}()
+	}
+}
+func connectSSHV2(sshServer string, sshConfig *ssh.ClientConfig) (*ssh.Client, error) {
+
+	conn, err := net.DialTimeout("tcp", sshServer, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("SSH dial failed: %w", err)
+	}
+
+	// Timeout untuk proses SSH handshake.
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
+
+	sshConn, chans, reqs, err := ssh.NewClientConn(
+		conn,
+		sshServer,
+		sshConfig,
+	)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("SSH handshake failed: %w", err)
+	}
+
+	// Hapus deadline setelah handshake berhasil.
+	conn.SetDeadline(time.Time{})
+
+	return ssh.NewClient(sshConn, chans, reqs), nil
+}
+
+func forward(client *ssh.Client, localConn net.Conn, remoteAddr string) {
+	defer localConn.Close()
+
+	remoteConn, err := client.Dial("tcp", remoteAddr)
+	if err != nil {
+		log.Printf("Remote dial failed: %v", err)
+		return
+	}
+	defer remoteConn.Close()
+
+	done := make(chan struct{})
+
+	go func() {
+		io.Copy(remoteConn, localConn)
+		close(done)
+	}()
+
+	io.Copy(localConn, remoteConn)
+
+	<-done
+}
+
+func startTunnel(key string) error {
+	viaSocks := GetConfig("remote." + key + ".via-socks")
+	status := GetConfig("remote." + key + ".status")
+	if status == "in-active" || status == "" {
+		return fmt.Errorf("[ssh-%s] status %s", key, status)
+	}
+	if viaSocks == "active" || viaSocks == "" {
+		return fmt.Errorf("[ssh-%s] via socks %s", key, viaSocks)
+	}
+
+	sshIpServer := GetConfig("remote." + key + ".ssh-ip")
+	sshPortServer := GetConfig("remote." + key + ".ssh-port")
+	sshUserServer := GetConfig("remote." + key + ".ssh-user")
+	sshPassServer := GetConfig("remote." + key + ".ssh-password")
+
+	remoteIp := GetConfig("remote." + key + ".ip")
+	remotePort := GetConfig("remote." + key + ".port")
+	remotePortLocal := GetConfig("remote." + key + ".port-local")
+
+	sshServer := sshIpServer + ":" + sshPortServer
+	sshUser := sshUserServer
+	sshPass := sshPassServer
+
+	sshConfig := &ssh.ClientConfig{
+		User:            sshUser,
+		Auth:            []ssh.AuthMethod{ssh.Password(sshPass)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	localAddr := "127.0.0.1:" + remotePortLocal
+	remoteAddr := remoteIp + ":" + remotePort
+
+	// Listener hanya dibuat satu kali.
+	listener, err := net.Listen("tcp", localAddr)
+	if err != nil {
+		return fmt.Errorf("listen failed: %w", err)
+	}
+	defer listener.Close()
+	log.Printf("[%s] Listening %s -> %s via SSH %s\n", logGreen("ssh-"+key), localAddr, remoteAddr, sshServer)
+
+	accepted := make(chan net.Conn, 100)
+
+	// Terima koneksi lokal secara terus-menerus.
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("[%s] Accept failed: %v\n", logGreen("ssh-"+key), logRed(err.Error()))
+				return
+			}
+
+			select {
+			case accepted <- conn:
+			default:
+				log.Printf("[%s] %s\n", logGreen("ssh-"+key), logRed("Connection queue full, closing connection"))
+				conn.Close()
+			}
+		}
+	}()
+
+	for {
+		log.Printf("[%s] %s\n", logGreen("ssh-"+key), logGreen("Attempting SSH connection..."))
+
+		client, err := connectSSHV2(sshServer, sshConfig)
+		if err != nil {
+			log.Printf("[%s] SSH connection failed: %v", logGreen("ssh-"+key), logRed(err.Error()))
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		log.Printf("[%s] %s\n", logGreen("ssh-"+key), logGreen("SSH connected successfully"))
+
+		// Memantau koneksi SSH.
+		disconnected := make(chan error, 1)
+
+		go func() {
+			disconnected <- client.Wait()
+		}()
+
+	loopListener:
+		for {
+			select {
+			case localConn := <-accepted:
+				go forward(client, localConn, remoteAddr)
+
+			case err := <-disconnected:
+				log.Printf("[%s] SSH disconnected: %s", logGreen("ssh-"+key), logRed(err.Error()))
+				break loopListener
+			}
+		}
+
+		client.Close()
+
+		log.Printf("[%s] %s", logGreen("ssh-"+key), "Retry SSH connection in 5 seconds...")
+		time.Sleep(5 * time.Second)
 	}
 }
 
