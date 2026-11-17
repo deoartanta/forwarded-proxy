@@ -54,12 +54,14 @@ func logRed(str string) string {
 
 func main() {
 	var wg sync.WaitGroup
+	const delay = 500
 	wg.Go(func() {
 		err := connectSocksSSH("sbox-sdn")
 		if err != nil {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	time.Sleep(delay * time.Millisecond)
 
 	wg.Go(func() {
 		err := connectSocksSSH("sbox-cda")
@@ -67,6 +69,7 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	time.Sleep(delay * time.Millisecond)
 
 	wg.Go(func() {
 		err := connectSocks("stg-redis")
@@ -74,6 +77,7 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	time.Sleep(delay * time.Millisecond)
 
 	wg.Go(func() {
 		err := connectSocksSSH("prod-sdn-redis")
@@ -81,6 +85,7 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	time.Sleep(delay * time.Millisecond)
 
 	wg.Go(func() {
 		err := connectSocks("stg")
@@ -88,41 +93,38 @@ func main() {
 			log.Println(logRed(err.Error()))
 		}
 	})
+	time.Sleep(delay * time.Millisecond)
 
-	wg.Go(func() {
-		err := startTunnel("prod-sdn-redis")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
+	err := startTunnel("prod-sdn-redis")
+	if err != nil {
+		log.Println(logRed(err.Error()))
+	}
 
-	wg.Go(func() {
-		err := startTunnel("sbox-sdn")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
+	err = startTunnel("sbox-sdn")
+	if err != nil {
+		log.Println(logRed(err.Error()))
+	}
 
-	wg.Go(func() {
-		err := startTunnel("sbox-cda")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
+	err = startTunnel("sbox-cda")
+	if err != nil {
+		log.Println(logRed(err.Error()))
+	}
 
-	wg.Go(func() {
-		err := startTunnel("stg-redis")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
+	err = startTunnel("prod-sdn")
+	if err != nil {
+		log.Println(logRed(err.Error()))
+	}
 
-	wg.Go(func() {
-		err := startTunnel("stg")
-		if err != nil {
-			log.Println(logRed(err.Error()))
-		}
-	})
+	err = startTunnel("stg-redis")
+	if err != nil {
+		log.Println(logRed(err.Error()))
+	}
+
+	err = startTunnel("stg")
+	if err != nil {
+		log.Println(logRed(err.Error()))
+	}
+	wg.Add(1)
 	wg.Wait()
 }
 
@@ -304,7 +306,7 @@ func forward(client *ssh.Client, localConn net.Conn, remoteAddr string) {
 
 	remoteConn, err := client.Dial("tcp", remoteAddr)
 	if err != nil {
-		log.Printf("Remote dial failed: %v", err)
+		log.Printf("[%s]Remote dial failed: %s", logGreen(remoteAddr), logRed(err.Error()))
 		return
 	}
 	defer remoteConn.Close()
@@ -358,7 +360,6 @@ func startTunnel(key string) error {
 	if err != nil {
 		return fmt.Errorf("listen failed: %w", err)
 	}
-	defer listener.Close()
 	log.Printf("[%s] Listening %s -> %s via SSH %s\n", logGreen("ssh-"+key), localAddr, remoteAddr, sshServer)
 
 	accepted := make(chan net.Conn, 100)
@@ -381,41 +382,46 @@ func startTunnel(key string) error {
 		}
 	}()
 
-	for {
-		log.Printf("[%s] %s\n", logGreen("ssh-"+key), logGreen("Attempting SSH connection..."))
-
-		client, err := connectSSHV2(sshServer, sshConfig)
-		if err != nil {
-			log.Printf("[%s] SSH connection failed: %v", logGreen("ssh-"+key), logRed(err.Error()))
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		log.Printf("[%s] %s\n", logGreen("ssh-"+key), logGreen("SSH connected successfully"))
-
-		// Memantau koneksi SSH.
-		disconnected := make(chan error, 1)
-
-		go func() {
-			disconnected <- client.Wait()
-		}()
-
-	loopListener:
+	go func() {
+		defer listener.Close()
 		for {
-			select {
-			case localConn := <-accepted:
-				go forward(client, localConn, remoteAddr)
+			log.Printf("[%s] %s\n", logGreen("ssh-"+key), logGreen("Attempting SSH connection..."))
 
-			case err := <-disconnected:
-				log.Printf("[%s] SSH disconnected: %s", logGreen("ssh-"+key), logRed(err.Error()))
-				break loopListener
+			client, err := connectSSHV2(sshServer, sshConfig)
+			if err != nil {
+				log.Printf("[%s] SSH connection failed: %v", logGreen("ssh-"+key), logRed(err.Error()))
+				time.Sleep(5 * time.Second)
+				continue
 			}
+			log.Printf("[%s] %s\n", logGreen("ssh-"+key), logGreen("SSH connected successfully"))
+
+			// Memantau koneksi SSH.
+			disconnected := make(chan error, 1)
+
+			go func() {
+				disconnected <- client.Wait()
+			}()
+
+		loopListener:
+			for {
+				select {
+				case localConn := <-accepted:
+					go forward(client, localConn, remoteAddr)
+
+				case err := <-disconnected:
+					log.Printf("[%s] SSH disconnected: %s", logGreen("ssh-"+key), logRed(err.Error()))
+					break loopListener
+				}
+			}
+
+			client.Close()
+
+			log.Printf("[%s] %s", logGreen("ssh-"+key), "Retry SSH connection in 5 seconds...")
+			time.Sleep(5 * time.Second)
 		}
-
-		client.Close()
-
-		log.Printf("[%s] %s", logGreen("ssh-"+key), "Retry SSH connection in 5 seconds...")
-		time.Sleep(5 * time.Second)
-	}
+	}()
+	time.Sleep(500 * time.Millisecond)
+	return nil
 }
 
 // func connectSSH(key string) error {
